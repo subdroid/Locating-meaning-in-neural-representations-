@@ -8,7 +8,10 @@ Representations
 .cache
 .python_history
 .*_history
-graphs 
+# graphs 
+.config
+.cache
+__pycache__
 #*.png
 # Byte-compiled / optimized / DLL files
 __pycache__/

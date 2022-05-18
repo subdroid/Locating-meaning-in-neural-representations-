@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 import os
 from argparse import ArgumentParser
-from representation_generator_utils import check_folder_exists, extract_paraphrase_data
-from transformers import AutoTokenizer, AutoModel
+from representation_generator_utils import check_folder_exists, extract_paraphrase_data, extract_synthetic_data
+from transformers import AutoTokenizer, AutoModel, AutoModelForCausalLM
 import numpy as np
 from scipy.spatial import distance
 import matplotlib.pyplot as plt
@@ -22,12 +22,19 @@ class Model_sent:
             self.model = "roberta-large"
         if model=='gpt2':
             self.model = "gpt2"    
+        if model=='gpt':
+            self.model = "openai-gpt"
+                
+        
 
 
         
     def init_model(self):
-        self.tokenizer = AutoTokenizer.from_pretrained(self.model,cache_dir="huggingface_cache")  
-        self.model_out = AutoModel.from_pretrained(self.model, output_hidden_states=True,cache_dir="huggingface_cache")
+        self.tokenizer = AutoTokenizer.from_pretrained(self.model,cache_dir="huggingface_cache") 
+        if self.model_name=="gpt" or self.model_name=="gpt2":
+            self.model_out = AutoModelForCausalLM.from_pretrained(self.model, output_hidden_states=True,cache_dir="huggingface_cache")    
+        else:
+            self.model_out = AutoModel.from_pretrained(self.model, output_hidden_states=True,cache_dir="huggingface_cache")
         return self.tokenizer,self.model_out
     
     def tok(self,sent):
@@ -35,26 +42,30 @@ class Model_sent:
         return encoded['input_ids']
     
     def word_repr(self,word,pooler=False):
-        pooler_output = None
+       
         
         outputs = self.model_out(word)
+        
+        if self.model_name=="gpt":
+            last_hidden = outputs[0]
+            hidden_states = outputs[1]
 
-        if not pooler:
-            hidden_states = outputs.hidden_states
-            last_hidden = outputs.last_hidden_state
-
-        if pooler: #FOR BERT OUTPUTS
-            pooler_output = outputs[1] #shape=[1,768] --> hidden state corresponding to the first token
+        elif self.model_name=="gpt2":
+            last_hidden = outputs[0]
+            attentions = outputs[1]
+            hidden_states = outputs[2]
+            
+        else: 
             last_hidden = outputs[0] # shape=[1,w,768]...final output       
             hidden_states = outputs[2] #len=13....0th layer output is representation from embedding layer
         
-        return last_hidden,pooler_output,hidden_states
+        return last_hidden,hidden_states
     
     def get_representations(self,n_layers,sent):
         
         tok = self.tok(sent) #shape=[1,w]
         
-        final_layer_tokens, pooler, hidden_states = self.word_repr(tok,pooler=True) 
+        final_layer_tokens, hidden_states = self.word_repr(tok,pooler=False) 
             
         Mean = []
         
@@ -133,9 +144,11 @@ def calc_model_wise(model_name):
     case0 = get_representations_sentence_pairs(n_layers,model,sent0)
     print("processing paraphrase cases")
     case1 = get_representations_sentence_pairs(n_layers,model,sent1)
+    print("processing synthetic corpus cases")
+    case2 = get_representations_sentence_pairs(n_layers,model,sent_syn)
     plotter("Normal",n_layers,case0)
     plotter("Paraphrase",n_layers,case1)
-
+    plotter("Synthetic",n_layers,case2)
     plt.ylabel("Average cosine similarity")
     plt.xlabel("Layer")
     plt.title(model_name+": Cosine distance among sentence pairs")
@@ -159,12 +172,13 @@ if __name__ == "__main__":
     
     data_folder = os.path.join(os.getcwd(),os.path.join("data","paraphrase_identification"))
     sent0, sent1 = extract_paraphrase_data(data_folder) 
+    data_folder = os.path.join(os.getcwd(),os.path.join("data","synthetic_data"))
+    sent_syn = extract_synthetic_data(data_folder) 
 
-    # calc_model_wise("bert-base")
-    # calc_model_wise("bert-large")    
-    # calc_model_wise("roberta-base")
-    # calc_model_wise("roberta-large")
+    calc_model_wise("bert-base")
+    calc_model_wise("bert-large")    
+    calc_model_wise("roberta-base")
+    calc_model_wise("roberta-large")
+    calc_model_wise("gpt")
     calc_model_wise("gpt2")
-        
     
-   
